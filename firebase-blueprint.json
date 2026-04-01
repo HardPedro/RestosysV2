@@ -1,0 +1,180 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the restaurant system (staff).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "manager", "waiter", "kitchen", "bar", "cashier"] },
+        "pin": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "role", "createdAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "A product or ingredient in the restaurant.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string", "enum": ["food", "drink", "ingredient"] },
+        "unit": { "type": "string", "enum": ["kg", "l", "un", "g", "ml"] },
+        "cost": { "type": "number" },
+        "price": { "type": "number" },
+        "stock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "isComposite": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "unit", "cost", "price", "stock", "minStock", "isComposite", "createdAt"]
+    },
+    "RecipeIngredient": {
+      "title": "Recipe Ingredient",
+      "description": "An ingredient in a composite product.",
+      "type": "object",
+      "properties": {
+        "ingredientId": { "type": "string" },
+        "quantity": { "type": "number" }
+      },
+      "required": ["ingredientId", "quantity"]
+    },
+    "Recipe": {
+      "title": "Recipe",
+      "description": "The recipe for a composite product.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "ingredients": {
+          "type": "array",
+          "items": { "$ref": "#/entities/RecipeIngredient" }
+        }
+      },
+      "required": ["productId", "ingredients"]
+    },
+    "Table": {
+      "title": "Table",
+      "description": "A table in the restaurant.",
+      "type": "object",
+      "properties": {
+        "number": { "type": "number" },
+        "status": { "type": "string", "enum": ["free", "occupied", "billing"] },
+        "currentOrderId": { "type": "string" }
+      },
+      "required": ["number", "status"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "An order for a table.",
+      "type": "object",
+      "properties": {
+        "tableId": { "type": "string" },
+        "waiterId": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "total": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "closedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tableId", "waiterId", "status", "total", "createdAt"]
+    },
+    "OrderItem": {
+      "title": "Order Item",
+      "description": "An item within an order.",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "quantity": { "type": "number" },
+        "price": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "preparing", "ready", "delivered"] },
+        "type": { "type": "string", "enum": ["food", "drink"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderId", "productId", "productName", "quantity", "price", "status", "type", "createdAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A financial transaction (payable or receivable).",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["payable", "receivable"] },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "paid"] },
+        "dueDate": { "type": "string", "format": "date-time" },
+        "paidDate": { "type": "string", "format": "date-time" },
+        "category": { "type": "string" },
+        "orderId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "amount", "description", "status", "dueDate", "category", "createdAt"]
+    },
+    "StockMovement": {
+      "title": "Stock Movement",
+      "description": "A movement of stock (in or out).",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string" },
+        "type": { "type": "string", "enum": ["in", "out"] },
+        "quantity": { "type": "number" },
+        "reason": { "type": "string", "enum": ["purchase", "sale", "loss", "adjustment"] },
+        "date": { "type": "string", "format": "date-time" },
+        "orderId": { "type": "string" }
+      },
+      "required": ["productId", "type", "quantity", "reason", "date"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Global application settings.",
+      "type": "object",
+      "properties": {
+        "config": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["config", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Staff users."
+    },
+    "products": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Products and ingredients."
+    },
+    "recipes": {
+      "schema": { "$ref": "#/entities/Recipe" },
+      "description": "Recipes for composite products."
+    },
+    "tables": {
+      "schema": { "$ref": "#/entities/Table" },
+      "description": "Restaurant tables."
+    },
+    "orders": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Customer orders."
+    },
+    "orderItems": {
+      "schema": { "$ref": "#/entities/OrderItem" },
+      "description": "Items within orders."
+    },
+    "transactions": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Financial transactions."
+    },
+    "stockMovements": {
+      "schema": { "$ref": "#/entities/StockMovement" },
+      "description": "Stock movements."
+    },
+    "settings": {
+      "schema": { "$ref": "#/entities/Settings" },
+      "description": "Global settings."
+    }
+  }
+}

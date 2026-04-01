@@ -1,0 +1,335 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: auto-generated or uid
+    // Fields:
+    //   - uid: string (optional, only for auth users)
+    //   - name: string (required)
+    //   - email: string (optional)
+    //   - role: string (required, 'admin', 'manager', 'waiter', 'kitchen', 'bar', 'cashier')
+    //   - pin: string (optional)
+    //   - createdAt: string (required)
+    //
+    // Collection: products
+    // Document ID: auto-generated
+    // Fields:
+    //   - name: string (required)
+    //   - description: string (optional)
+    //   - category: string (required, 'food', 'drink', 'ingredient')
+    //   - unit: string (required)
+    //   - cost: number (required)
+    //   - price: number (required)
+    //   - stock: number (required)
+    //   - minStock: number (required)
+    //   - isComposite: boolean (required)
+    //   - createdAt: string (required)
+    //
+    // Collection: recipes
+    // Document ID: auto-generated
+    // Fields:
+    //   - productId: string (required)
+    //   - ingredients: list (required)
+    //
+    // Collection: tables
+    // Document ID: auto-generated
+    // Fields:
+    //   - number: number (required)
+    //   - status: string (required, 'free', 'occupied', 'billing')
+    //   - currentOrderId: string (optional)
+    //
+    // Collection: orders
+    // Document ID: auto-generated
+    // Fields:
+    //   - tableId: string (required)
+    //   - waiterId: string (required)
+    //   - status: string (required, 'open', 'closed')
+    //   - total: number (required)
+    //   - createdAt: string (required)
+    //   - closedAt: string (optional)
+    //
+    // Collection: orderItems
+    // Document ID: auto-generated
+    // Fields:
+    //   - orderId: string (required)
+    //   - productId: string (required)
+    //   - productName: string (required)
+    //   - quantity: number (required)
+    //   - price: number (required)
+    //   - status: string (required, 'pending', 'preparing', 'ready', 'delivered')
+    //   - type: string (required, 'food', 'drink')
+    //   - notes: string (optional)
+    //   - createdAt: string (required)
+    //
+    // Collection: transactions
+    // Document ID: auto-generated
+    // Fields:
+    //   - type: string (required, 'payable', 'receivable')
+    //   - amount: number (required)
+    //   - description: string (required)
+    //   - status: string (required, 'pending', 'paid')
+    //   - dueDate: string (required)
+    //   - paidDate: string (optional)
+    //   - category: string (required)
+    //   - orderId: string (optional)
+    //   - createdAt: string (required)
+    //
+    // Collection: stockMovements
+    // Document ID: auto-generated
+    // Fields:
+    //   - productId: string (required)
+    //   - type: string (required, 'in', 'out')
+    //   - quantity: number (required)
+    //   - reason: string (required, 'purchase', 'sale', 'loss', 'adjustment')
+    //   - date: string (required)
+    //   - orderId: string (optional)
+    //
+    // Collection: settings
+    // Document ID: auto-generated
+    // Fields:
+    //   - config: map (required)
+    //   - updatedAt: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().role == role;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        hasRole('admin') || 
+        (request.auth.token.email == "pedrohardsolu2025@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+    
+    function isManager() {
+      return hasRole('manager') || isAdmin();
+    }
+    
+    function isWaiter() {
+      return hasRole('waiter') || isManager();
+    }
+    
+    function isKitchen() {
+      return hasRole('kitchen') || isManager();
+    }
+    
+    function isBar() {
+      return hasRole('bar') || isManager();
+    }
+    
+    function isCashier() {
+      return hasRole('cashier') || isManager();
+    }
+
+    // Validation Helpers
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+    
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+    
+    function isPositive(field) {
+      return request.resource.data[field] is number && request.resource.data[field] >= 0;
+    }
+    
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Domain Validators
+    function isValidUser() {
+      return hasRequiredFields(['name', 'role', 'createdAt']) &&
+             validStringLength('name', 1, 100) &&
+             request.resource.data.role in ['admin', 'manager', 'waiter', 'kitchen', 'bar', 'cashier'] &&
+             (!('email' in request.resource.data) || validStringLength('email', 0, 100)) &&
+             (!('pin' in request.resource.data) || validStringLength('pin', 0, 10)) &&
+             (!('uid' in request.resource.data) || validStringLength('uid', 0, 50));
+    }
+
+    function isValidProduct() {
+      return hasRequiredFields(['name', 'category', 'unit', 'cost', 'price', 'stock', 'minStock', 'isComposite', 'createdAt']) &&
+             validStringLength('name', 1, 100) &&
+             request.resource.data.category in ['food', 'drink', 'ingredient'] &&
+             request.resource.data.unit in ['kg', 'l', 'un', 'g', 'ml'] &&
+             isPositive('cost') &&
+             isPositive('price') &&
+             request.resource.data.stock is number &&
+             isPositive('minStock') &&
+             request.resource.data.isComposite is bool &&
+             (!('description' in request.resource.data) || validStringLength('description', 0, 500));
+    }
+
+    function isValidRecipe() {
+      return hasRequiredFields(['productId', 'ingredients']) &&
+             validStringLength('productId', 1, 50) &&
+             request.resource.data.ingredients is list &&
+             request.resource.data.ingredients.size() <= 50;
+    }
+
+    function isValidTable() {
+      return hasRequiredFields(['number', 'status']) &&
+             isPositive('number') &&
+             request.resource.data.status in ['free', 'occupied', 'billing'] &&
+             (!('currentOrderId' in request.resource.data) || request.resource.data.currentOrderId == null || validStringLength('currentOrderId', 0, 50));
+    }
+
+    function isValidOrder() {
+      return hasRequiredFields(['tableId', 'waiterId', 'status', 'total', 'createdAt']) &&
+             validStringLength('tableId', 1, 50) &&
+             validStringLength('waiterId', 1, 50) &&
+             request.resource.data.status in ['open', 'closed'] &&
+             isPositive('total') &&
+             (!('tableNumber' in request.resource.data) || isPositive('tableNumber')) &&
+             (!('waiterName' in request.resource.data) || validStringLength('waiterName', 0, 100)) &&
+             (!('closedAt' in request.resource.data) || validStringLength('closedAt', 0, 50));
+    }
+
+    function isValidOrderItem() {
+      return hasRequiredFields(['orderId', 'productId', 'productName', 'quantity', 'price', 'status', 'type', 'createdAt']) &&
+             validStringLength('orderId', 1, 50) &&
+             validStringLength('productId', 1, 50) &&
+             validStringLength('productName', 1, 100) &&
+             isPositive('quantity') &&
+             isPositive('price') &&
+             request.resource.data.status in ['pending', 'preparing', 'ready', 'delivered'] &&
+             request.resource.data.type in ['food', 'drink'] &&
+             (!('notes' in request.resource.data) || validStringLength('notes', 0, 500));
+    }
+
+    function isValidTransaction() {
+      return hasRequiredFields(['type', 'amount', 'description', 'status', 'dueDate', 'category', 'createdAt']) &&
+             request.resource.data.type in ['payable', 'receivable'] &&
+             isPositive('amount') &&
+             validStringLength('description', 1, 500) &&
+             request.resource.data.status in ['pending', 'paid'] &&
+             validStringLength('category', 1, 50) &&
+             (!('paidDate' in request.resource.data) || validStringLength('paidDate', 0, 50)) &&
+             (!('orderId' in request.resource.data) || validStringLength('orderId', 0, 50));
+    }
+
+    function isValidStockMovement() {
+      return hasRequiredFields(['productId', 'type', 'quantity', 'reason', 'date']) &&
+             validStringLength('productId', 1, 50) &&
+             request.resource.data.type in ['in', 'out'] &&
+             isPositive('quantity') &&
+             request.resource.data.reason in ['purchase', 'sale', 'loss', 'adjustment'] &&
+             (!('orderId' in request.resource.data) || validStringLength('orderId', 0, 50));
+    }
+
+    function isValidSettings() {
+      return hasRequiredFields(['config', 'updatedAt']) &&
+             request.resource.data.config is map;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isManager() || isWaiter(); // Waiters need to read users for WaiterLogin.tsx if the tablet is logged in as a waiter
+      allow create: if isAuthenticated() && isValidUser() && (isAdmin() || (isOwner(userId) && request.resource.data.role == 'waiter')); // Default Google users are waiters
+      allow update: if isAuthenticated() && isValidUser() && (isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role));
+      allow delete: if isAdmin();
+    }
+
+    match /products/{productId} {
+      allow read: if true; // QR Menu needs unauthenticated read
+      allow create: if isManager() && isValidProduct();
+      allow update: if isAuthenticated() && isValidProduct() && (isManager() || isWaiter()); // Waiters update stock
+      allow delete: if isManager();
+    }
+
+    match /recipes/{recipeId} {
+      allow read: if isAuthenticated();
+      allow create: if isManager() && isValidRecipe();
+      allow update: if isManager() && isValidRecipe();
+      allow delete: if isManager();
+    }
+
+    match /tables/{tableId} {
+      allow read: if isAuthenticated();
+      allow create: if isManager() && isValidTable();
+      allow update: if isAuthenticated() && isValidTable() && (isManager() || isCashier() || isWaiter());
+      allow delete: if isManager();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidOrder() && (isManager() || isWaiter());
+      allow update: if isAuthenticated() && isValidOrder() && (isManager() || isCashier() || isWaiter());
+      allow delete: if isManager();
+    }
+
+    match /orderItems/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidOrderItem() && (isManager() || isWaiter());
+      allow update: if isAuthenticated() && isValidOrderItem() && (isManager() || isCashier() || isKitchen() || isBar() || isWaiter());
+      allow delete: if isManager() || isCashier();
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isManager() || isCashier();
+      allow create: if (isManager() || isCashier()) && isValidTransaction();
+      allow update: if (isManager() || isCashier()) && isValidTransaction();
+      allow delete: if isManager() || isCashier();
+    }
+
+    match /stockMovements/{movementId} {
+      allow read: if isManager();
+      allow create: if isAuthenticated() && isValidStockMovement() && (isManager() || isWaiter());
+      allow update: if isManager() && isValidStockMovement();
+      allow delete: if isManager();
+    }
+
+    match /printJobs/{jobId} {
+      allow read: if isManager() || isCashier();
+      allow create: if isAuthenticated();
+      allow update: if isManager() || isCashier();
+      allow delete: if isManager() || isCashier();
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow create: if isManager() && isValidSettings();
+      allow update: if isManager() && isValidSettings();
+      allow delete: if isManager();
+    }
+  }
+}
