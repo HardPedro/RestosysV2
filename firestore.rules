@@ -121,7 +121,8 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() && (
         hasRole('admin') || 
-        (request.auth.token.email == "pedrohardsolu2025@gmail.com" && request.auth.token.email_verified == true)
+        (request.auth.token.email == "pedrohardsolu2025@gmail.com" && request.auth.token.email_verified == true) ||
+        (request.auth.token.email == "bsr.salvador2022@gmail.com" && request.auth.token.email_verified == true)
       );
     }
     

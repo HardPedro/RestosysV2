@@ -35,17 +35,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(true);
         setUser(firebaseUser);
         try {
+          const isAdminEmail = firebaseUser.email === 'pedrohardsolu2025@gmail.com' || firebaseUser.email === 'bsr.salvador2022@gmail.com';
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          
           if (userDoc.exists()) {
-            setUserData(userDoc.data() as UserData);
+            const data = userDoc.data() as UserData;
+            // Force upgrade to admin if they are one of the admin emails but their role isn't admin
+            if (isAdminEmail && data.role !== 'admin') {
+              data.role = 'admin';
+              await setDoc(doc(db, 'users', firebaseUser.uid), data, { merge: true });
+            }
+            setUserData(data);
           } else {
             // Create new user
-            const isFirstUser = firebaseUser.email === 'pedrohardsolu2025@gmail.com';
             const newUserData: UserData = {
               uid: firebaseUser.uid,
               name: firebaseUser.displayName || 'User',
               email: firebaseUser.email || '',
-              role: isFirstUser ? 'admin' : 'waiter', // Default new Google users to waiter
+              role: isAdminEmail ? 'admin' : 'waiter', // Default new Google users to waiter
               createdAt: new Date().toISOString(),
             };
             await setDoc(doc(db, 'users', firebaseUser.uid), newUserData);
