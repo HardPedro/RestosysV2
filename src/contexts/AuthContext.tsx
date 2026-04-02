@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { toast } from 'sonner';
 
 export type Role = 'admin' | 'manager' | 'waiter' | 'kitchen' | 'bar' | 'cashier';
 
@@ -81,8 +82,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      console.error("Login error:", error);
+      if (error.code === 'auth/popup-closed-by-user') {
+        toast.error('O login foi cancelado ou a janela foi fechada.');
+      } else if (error.code === 'auth/unauthorized-domain') {
+        toast.error('Domínio não autorizado. Abra o app em uma nova guia ou adicione a URL no Firebase Console.');
+      } else {
+        toast.error(`Erro ao fazer login: ${error.message}`);
+      }
+    }
   };
 
   const logout = async () => {

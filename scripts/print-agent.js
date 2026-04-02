@@ -151,9 +151,19 @@ function printReceipt(req, pConfig) {
 }
 
 function sendToPrinter(text, printerName) {
+  if (!printerName) {
+    console.log('Nenhuma impressora configurada para este setor. Ignorando impressão.');
+    return;
+  }
+
   const tempFile = path.join(process.cwd(), `print_${Date.now()}.txt`);
   fs.writeFileSync(tempFile, text, 'utf8');
   
+  // Cleanup temp file after 10 seconds regardless of exec hanging
+  setTimeout(() => {
+    try { fs.unlinkSync(tempFile); } catch(e) {}
+  }, 10000);
+
   // Use PowerShell to print the text file to the specific printer
   const psCommand = `Get-Content '${tempFile}' | Out-Printer -Name '${printerName}'`;
   exec(`powershell -Command "${psCommand}"`, (error) => {
@@ -162,9 +172,5 @@ function sendToPrinter(text, printerName) {
     } else {
       console.log(`Impresso com sucesso na impressora ${printerName}`);
     }
-    // Cleanup temp file
-    setTimeout(() => {
-      try { fs.unlinkSync(tempFile); } catch(e) {}
-    }, 5000);
   });
 }

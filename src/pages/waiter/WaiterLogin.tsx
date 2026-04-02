@@ -16,7 +16,7 @@ export default function WaiterLogin() {
 
     setLoading(true);
     try {
-      const q = query(collection(db, 'users'), where('role', '==', 'waiter'), where('pin', '==', pin));
+      const q = query(collection(db, 'users'), where('pin', '==', pin));
       const snapshot = await getDocs(q);
 
       if (!snapshot.empty) {
@@ -26,7 +26,7 @@ export default function WaiterLogin() {
         toast.success(`Bem-vindo, ${waiterData.name}!`);
         navigate('/waiter');
       } else {
-        toast.error('PIN incorreto ou garçom não encontrado');
+        toast.error('PIN incorreto ou usuário não encontrado');
         setPin('');
       }
     } catch (error) {

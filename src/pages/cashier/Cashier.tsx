@@ -166,7 +166,7 @@ export default function Cashier() {
       }
 
       // 3. Update Order Total and Status
-      const remainingItems = orderItems.filter(item => !selectedItems.includes(item.id) && item.status !== 'paid');
+      const remainingItems = orderItems.filter(item => !itemsToPay.some(i => i.id === item.id) && item.status !== 'paid');
       
       if (remainingItems.length === 0) {
         // Full checkout
