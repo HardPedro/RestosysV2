@@ -38,14 +38,17 @@ export const printReceipt = (content: string) => {
   const printerType = localStorage.getItem('printerType') || '80mm';
   
   let width = '80mm';
+  let fontSize = '14px';
   let extraCss = '';
   
   if (printerType === '58mm') {
     width = '58mm';
-    extraCss = 'body { font-size: 12px; padding: 5px; }';
+    fontSize = '12px';
+    extraCss = 'body { padding: 2px; }';
   } else if (printerType === 'a4') {
     width = '100%';
-    extraCss = 'body { font-size: 14px; max-width: 210mm; margin: 0 auto; padding: 20px; }';
+    fontSize = '16px';
+    extraCss = 'body { max-width: 210mm; margin: 0 auto; padding: 20px; }';
   }
 
   const iframe = document.createElement('iframe');
@@ -60,25 +63,37 @@ export const printReceipt = (content: string) => {
         <head>
           <title>Imprimir Comanda</title>
           <style>
+            @page { 
+              margin: 0; 
+              size: ${width} auto;
+            }
             body { 
-              font-family: monospace; 
+              font-family: 'Courier New', Courier, monospace; 
               color: #000; 
               margin: 0; 
-              padding: 10px; 
+              padding: 5px; 
               width: ${width};
+              font-size: ${fontSize};
+              line-height: 1.3;
+              -webkit-print-color-adjust: exact;
             }
             ${extraCss}
             h1, h2, h3, p { margin: 0 0 5px 0; padding: 0; }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
-            .flex { display: flex; justify-content: space-between; }
+            .flex { display: flex; justify-content: space-between; align-items: flex-start; }
             .border-b { border-bottom: 1px dashed #000; margin-bottom: 8px; padding-bottom: 8px; }
             .border-t { border-top: 1px dashed #000; margin-top: 8px; padding-top: 8px; }
             .bold { font-weight: bold; }
             .text-lg { font-size: 1.2em; }
-            .text-xl { font-size: 1.5em; }
+            .text-xl { font-size: 1.4em; }
+            .mb-1 { margin-bottom: 4px; }
             .mb-2 { margin-bottom: 8px; }
-            @page { margin: 0; }
+            .w-full { width: 100%; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+            td { vertical-align: top; padding: 2px 0; }
+            .qty { width: 30px; font-weight: bold; }
+            .price { text-align: right; width: 80px; }
           </style>
         </head>
         <body>${content}</body>

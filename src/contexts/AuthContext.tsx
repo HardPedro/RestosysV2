@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { toast } from 'sonner';
 
 export type Role = 'admin' | 'manager' | 'waiter' | 'kitchen' | 'bar' | 'cashier';
@@ -34,9 +34,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setLoading(true);
-        setUser(firebaseUser);
         try {
           const isAdminEmail = firebaseUser.email === 'pedrohardsolu2025@gmail.com' || firebaseUser.email === 'bsr.salvador2022@gmail.com';
+          
+          // First, try to get the user by their actual UID
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           
           if (userDoc.exists()) {
@@ -46,29 +47,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               data.role = 'admin';
               await setDoc(doc(db, 'users', firebaseUser.uid), data, { merge: true });
             }
+            setUser(firebaseUser);
             setUserData(data);
           } else {
-            // Create new user
-            const newUserData: UserData = {
-              uid: firebaseUser.uid,
-              name: firebaseUser.displayName || 'User',
-              email: firebaseUser.email || '',
-              role: isAdminEmail ? 'admin' : 'waiter', // Default new Google users to waiter
-              createdAt: new Date().toISOString(),
-            };
-            await setDoc(doc(db, 'users', firebaseUser.uid), newUserData);
-            setUserData(newUserData);
+            // Document doesn't exist by UID. Check if they were pre-authorized by email.
+            const q = query(collection(db, 'users'), where('email', '==', firebaseUser.email));
+            const querySnapshot = await getDocs(q);
+            
+            if (!querySnapshot.empty) {
+              // They are authorized!
+              const pendingDoc = querySnapshot.docs[0];
+              const pendingData = pendingDoc.data();
+              
+              // Create the real document with their actual UID
+              const newUserData: UserData = {
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName || pendingData.name || 'User',
+                email: firebaseUser.email || '',
+                role: isAdminEmail ? 'admin' : pendingData.role,
+                createdAt: new Date().toISOString(),
+              };
+              
+              await setDoc(doc(db, 'users', firebaseUser.uid), newUserData);
+              
+              // Delete the pending document
+              await deleteDoc(doc(db, 'users', pendingDoc.id));
+              
+              setUser(firebaseUser);
+              setUserData(newUserData);
+            } else if (isAdminEmail) {
+               // Super admins get in automatically even if not pre-authorized
+               const newUserData: UserData = {
+                uid: firebaseUser.uid,
+                name: firebaseUser.displayName || 'Admin',
+                email: firebaseUser.email || '',
+                role: 'admin',
+                createdAt: new Date().toISOString(),
+              };
+              await setDoc(doc(db, 'users', firebaseUser.uid), newUserData);
+              setUser(firebaseUser);
+              setUserData(newUserData);
+            } else {
+              // NOT AUTHORIZED
+              toast.error('Acesso negado. Seu e-mail não está autorizado pelo administrador.');
+              await signOut(auth);
+              setUser(null);
+              setUserData(null);
+            }
           }
         } catch (error) {
           console.error("Error fetching/creating user data:", error);
-          // If creation fails due to rules, we might just set them as manager locally or sign out
-          setUserData({
-            uid: firebaseUser.uid,
-            name: firebaseUser.displayName || 'User',
-            email: firebaseUser.email || '',
-            role: 'manager',
-            createdAt: new Date().toISOString(),
-          });
+          toast.error('Erro ao verificar autorização.');
+          await signOut(auth);
+          setUser(null);
+          setUserData(null);
         }
         setLoading(false);
       } else {

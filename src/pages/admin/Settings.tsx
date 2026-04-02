@@ -256,32 +256,72 @@ export default function Settings() {
   };
 
   const handleManualPrint = (job: any) => {
+    const printerType = localStorage.getItem('printerType') || '80mm';
+    const isThermal = printerType !== 'a4';
+    
     // Generate HTML content for manual print
     const content = `
-      <div style="font-family: monospace; width: 80mm; padding: 5px;">
-        <h2 style="text-align: center;">${job.tipo.toUpperCase()}</h2>
-        <p>Mesa: ${job.mesa}</p>
-        <p>Pedido: ${job.pedidoId}</p>
-        <hr/>
-        <table style="width: 100%;">
+      <div class="text-center border-b">
+        <h2 class="text-xl bold">${job.tipo.toUpperCase()}</h2>
+        <p>${new Date().toLocaleString('pt-BR')}</p>
+      </div>
+      <div class="border-b">
+        <p class="bold text-lg">Mesa: ${job.mesa}</p>
+        <p>Pedido: #${job.pedidoId?.slice(-6)}</p>
+      </div>
+      <div class="border-b">
+        <table>
           ${job.itens.map((i: any) => `
             <tr>
-              <td>${i.quantidade}x ${i.nome}</td>
-              <td style="text-align: right;">R$ ${(i.preco * i.quantidade || 0).toFixed(2)}</td>
+              <td class="qty">${i.quantidade}x</td>
+              <td>
+                <div class="bold">${i.nome}</div>
+                ${i.observacao ? `<div style="font-size: 0.9em; font-style: italic;">Obs: ${i.observacao}</div>` : ''}
+              </td>
+              <td class="price">R$ ${(i.preco * i.quantidade || 0).toFixed(2)}</td>
             </tr>
-            ${i.observacao ? `<tr><td colspan="2" style="font-size: 0.8em;">Obs: ${i.observacao}</td></tr>` : ''}
           `).join('')}
         </table>
-        ${job.total > 0 ? `
-          <hr/>
-          <p style="text-align: right; font-weight: bold;">Total: R$ ${job.total.toFixed(2)}</p>
-        ` : ''}
-        <p style="text-align: center; font-size: 0.8em; margin-top: 20px;">
-          ${new Date().toLocaleString()}
-        </p>
+      </div>
+      ${job.total > 0 ? `
+        <div class="flex text-lg bold mb-2">
+          <span>TOTAL</span>
+          <span>R$ ${job.total.toFixed(2)}</span>
+        </div>
+      ` : ''}
+      <div class="text-center border-t" style="margin-top: 15px;">
+        <p>Obrigado pela preferência!</p>
+        <p style="font-size: 0.8em;">*** FIM DO DOCUMENTO ***</p>
       </div>
     `;
     printReceipt(content);
+  };
+
+  const handleTestPrint = async (sector: string) => {
+    const config = localConfig[sector];
+    if (!config.printer) {
+      toast.error(`Selecione uma impressora para o setor ${sector}`);
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:17321/print', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          printerName: config.printer,
+          text: `--- TESTE DE IMPRESSAO ---\r\nSetor: ${sector.toUpperCase()}\r\nLargura: ${config.largura}mm\r\nData: ${new Date().toLocaleString()}\r\n\r\nOK - IMPRESSORA FUNCIONANDO\r\n\r\n\r\n\r\n\r\n\r\n`
+        })
+      });
+
+      if (res.ok) {
+        toast.success(`Teste enviado para ${config.printer}`);
+      } else {
+        throw new Error(await res.text());
+      }
+    } catch (error: any) {
+      toast.error(`Erro no teste: ${error.message}`);
+    }
   };
 
   const handleDeleteJob = async (jobId: string) => {
@@ -468,7 +508,15 @@ export default function Settings() {
           <div className="grid gap-6 md:grid-cols-3">
             {['cozinha', 'bar', 'caixa'].map((setor) => (
               <div key={setor} className="rounded-2xl border border-stone-200 bg-stone-50 p-5">
-                <h3 className="mb-4 font-bold font-heading text-lg capitalize text-stone-900">{setor}</h3>
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="font-bold font-heading text-lg capitalize text-stone-900">{setor}</h3>
+                  <button 
+                    onClick={() => handleTestPrint(setor)}
+                    className="text-[10px] font-bold uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md hover:bg-indigo-100 transition-colors"
+                  >
+                    Teste
+                  </button>
+                </div>
                 
                 <div className="space-y-4">
                   <div>

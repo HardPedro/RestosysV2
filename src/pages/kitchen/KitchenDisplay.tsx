@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, where, updateDoc, doc, orderBy, addDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { CheckCircle, Clock, Play, Printer } from 'lucide-react';
@@ -7,6 +7,8 @@ import { printReceipt } from '../../lib/print';
 
 export default function KitchenDisplay() {
   const [items, setItems] = useState<any[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
     const q = query(
@@ -24,55 +26,73 @@ export default function KitchenDisplay() {
   }, []);
 
   const updateStatus = async (id: string, newStatus: string) => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     try {
       await updateDoc(doc(db, 'orderItems', id), { status: newStatus });
       toast.success(`Status atualizado para ${newStatus}`);
     } catch (error) {
       toast.error('Erro ao atualizar status');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
-  const handlePrint = (item: any) => {
-    const content = `
-      <div class="text-center border-b">
-        <h2>COZINHA</h2>
-        <p>${new Date(item.createdAt).toLocaleString('pt-BR')}</p>
-      </div>
-      <div class="border-b">
-        <h1 class="text-xl">MESA ${item.tableNumber || '?'}</h1>
-      </div>
-      <div class="border-b">
-        <p class="text-lg bold">${item.quantity}x ${item.productName}</p>
-        ${item.notes ? `<p>OBS: ${item.notes}</p>` : ''}
-      </div>
-      <div class="text-center">
-        <p>*** FIM ***</p>
-      </div>
-    `;
+  const handlePrint = async (item: any) => {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      const content = `
+        <div class="text-center border-b">
+          <h2 class="text-xl bold">COZINHA</h2>
+          <p>${new Date(item.createdAt).toLocaleString('pt-BR')}</p>
+        </div>
+        <div class="border-b">
+          <p class="bold text-lg">MESA ${item.tableNumber === 0 ? 'BAR' : item.tableNumber || '?'}</p>
+          <p>Pedido #${item.orderId?.slice(-6) || 'N/A'}</p>
+        </div>
+        <div class="border-b">
+          <p class="text-xl bold mb-1">${item.quantity}x ${item.productName}</p>
+          ${item.notes ? `<div class="bold" style="background: #eee; padding: 5px; border: 1px solid #000;">OBS: ${item.notes}</div>` : ''}
+        </div>
+        <div class="text-center border-t" style="margin-top: 10px;">
+          <p style="font-size: 0.8em;">*** FIM DA COMANDA ***</p>
+        </div>
+      `;
 
-    const printReq = {
-      pedidoId: item.orderId?.slice(0, 8) || 'N/A',
-      itens: [{
-        nome: item.productName,
-        setor: 'cozinha',
-        quantidade: item.quantity,
-        preco: item.price || 0,
-        observacao: item.notes
-      }],
-      imprimirCaixa: false,
-      tipo: 'comanda',
-      total: 0,
-      mesa: item.tableNumber === 0 ? 'BAR' : (item.tableNumber?.toString() || '?')
-    };
+      const printReq = {
+        pedidoId: item.orderId?.slice(0, 8) || 'N/A',
+        itens: [{
+          nome: item.productName,
+          setor: 'cozinha',
+          quantidade: item.quantity,
+          preco: item.price || 0,
+          observacao: item.notes
+        }],
+        imprimirCaixa: false,
+        tipo: 'comanda',
+        total: 0,
+        mesa: item.tableNumber === 0 ? 'BAR' : (item.tableNumber?.toString() || '?')
+      };
 
-    // Create a printJob so the PC can print it automatically via the local agent
-    addDoc(collection(db, 'printJobs'), {
-      ...printReq,
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    }).catch(err => console.error('Failed to create kitchen print job', err));
-    
-    toast.success('Enviando para a impressora...');
+      // Create a printJob so the PC can print it automatically via the local agent
+      await addDoc(collection(db, 'printJobs'), {
+        ...printReq,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      });
+      
+      toast.success('Enviando para a impressora...');
+    } catch (error) {
+      console.error('Failed to create kitchen print job', error);
+      toast.error('Erro ao enviar para impressora');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   const pendingItems = items.filter(i => i.status === 'pending');
@@ -101,18 +121,26 @@ export default function KitchenDisplay() {
                   </div>
                   <div className="flex flex-col items-end gap-3">
                     <span className="text-xs font-medium text-stone-500 bg-white px-2 py-1 rounded-md border border-stone-200">{new Date(item.createdAt).toLocaleTimeString()}</span>
-                    <button onClick={() => handlePrint(item)} className="rounded-xl p-2 text-stone-400 hover:bg-stone-200 hover:text-stone-700 transition-colors" title="Imprimir Comanda">
-                      <Printer size={20} />
-                    </button>
+                    {!isSubmitting && (
+                      <button onClick={() => handlePrint(item)} className="rounded-xl p-2 text-stone-400 hover:bg-stone-200 hover:text-stone-700 transition-colors" title="Imprimir Comanda">
+                        <Printer size={20} />
+                      </button>
+                    )}
                   </div>
                 </div>
                 {item.notes && <p className="mb-4 text-sm font-bold text-red-600 bg-red-50 p-3 rounded-xl border border-red-100">Obs: {item.notes}</p>}
-                <button
-                  onClick={() => updateStatus(item.id, 'preparing')}
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 font-bold text-white hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-all active:scale-95"
-                >
-                  <Play size={20} /> Iniciar Preparo
-                </button>
+                {isSubmitting ? (
+                  <div className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-stone-100 py-3 font-bold text-stone-400">
+                    <Clock className="animate-spin" size={20} /> Processando...
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => updateStatus(item.id, 'preparing')}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 font-bold text-white hover:bg-blue-700 shadow-md shadow-blue-600/20 transition-all active:scale-95"
+                  >
+                    <Play size={20} /> Iniciar Preparo
+                  </button>
+                )}
               </div>
             ))}
             {pendingItems.length === 0 && (
@@ -142,18 +170,26 @@ export default function KitchenDisplay() {
                   </div>
                   <div className="flex flex-col items-end gap-3">
                     <span className="text-xs font-medium text-stone-500 bg-white px-2 py-1 rounded-md border border-stone-200">{new Date(item.createdAt).toLocaleTimeString()}</span>
-                    <button onClick={() => handlePrint(item)} className="rounded-xl p-2 text-blue-400 hover:bg-blue-100 hover:text-blue-700 transition-colors" title="Imprimir Comanda">
-                      <Printer size={20} />
-                    </button>
+                    {!isSubmitting && (
+                      <button onClick={() => handlePrint(item)} className="rounded-xl p-2 text-blue-400 hover:bg-blue-100 hover:text-blue-700 transition-colors" title="Imprimir Comanda">
+                        <Printer size={20} />
+                      </button>
+                    )}
                   </div>
                 </div>
                 {item.notes && <p className="mb-4 text-sm font-bold text-red-600 bg-red-50 p-3 rounded-xl border border-red-100">Obs: {item.notes}</p>}
-                <button
-                  onClick={() => updateStatus(item.id, 'ready')}
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 font-bold text-white hover:bg-green-700 shadow-md shadow-green-600/20 transition-all active:scale-95"
-                >
-                  <CheckCircle size={20} /> Marcar como Pronto
-                </button>
+                {isSubmitting ? (
+                  <div className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-stone-100 py-3 font-bold text-stone-400">
+                    <Clock className="animate-spin" size={20} /> Processando...
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => updateStatus(item.id, 'ready')}
+                    className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 font-bold text-white hover:bg-green-700 shadow-md shadow-green-600/20 transition-all active:scale-95"
+                  >
+                    <CheckCircle size={20} /> Marcar como Pronto
+                  </button>
+                )}
               </div>
             ))}
             {preparingItems.length === 0 && (

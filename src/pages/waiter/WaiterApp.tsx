@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, where, addDoc, updateDoc, doc, getDocs, runTransaction, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,6 +18,8 @@ export default function WaiterApp() {
   const [orderItems, setOrderItems] = useState<any[]>([]);
   const [cart, setCart] = useState<{product: any, quantity: number, notes: string}[]>([]);
   const [view, setView] = useState<'tables' | 'menu' | 'cart' | 'order'>('tables');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
     const session = localStorage.getItem('waiter_session');
@@ -54,6 +56,10 @@ export default function WaiterApp() {
 
   const currentTable = tables.find(t => t.id === selectedTable?.id) || null;
   const currentOrderId = currentTable?.currentOrderId;
+
+  const unpaidTotal = orderItems
+    .filter(item => item.status !== 'paid' && item.status !== 'cancelled')
+    .reduce((acc, item) => acc + (item.price * item.quantity), 0);
 
   useEffect(() => {
     if (currentOrderId) {
@@ -114,12 +120,14 @@ export default function WaiterApp() {
   };
 
   const sendOrder = async () => {
-    if (cart.length === 0 || !currentTable || !userData) return;
+    if (cart.length === 0 || !currentTable || !userData || isSubmittingRef.current) return;
     if (currentTable.status === 'billing') {
       toast.error('Mesa em fechamento. Não é possível lançar pedidos.');
       return;
     }
 
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     let finalOrderId = currentOrderId;
     try {
       // Pre-fetch recipes for composite products outside the transaction
@@ -295,68 +303,89 @@ export default function WaiterApp() {
       });
 
       setCart([]);
-      setView('order');
       toast.success('Pedido enviado para preparo!');
+      
+      // Auto-lock after sending order for security on shared tablets
+      setTimeout(() => {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        handleLogout();
+      }, 1500);
+      
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || 'Erro ao enviar pedido');
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
   const handlePrint = () => {
-    if (!currentOrder || !currentTable) return;
+    if (!currentOrder || !currentTable || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     
-    const itemsHtml = orderItems.map(item => `
-      <div class="flex mb-2">
-        <span>${item.quantity}x ${item.productName}</span>
-        <span>R$ ${(item.price * item.quantity).toFixed(2)}</span>
-      </div>
-    `).join('');
+    try {
+      const itemsHtml = orderItems.map(item => `
+        <tr>
+          <td class="qty">${item.quantity}x</td>
+          <td>${item.productName}</td>
+          <td class="price">R$ ${(item.price * item.quantity).toFixed(2)}</td>
+        </tr>
+      `).join('');
 
-    const content = `
-      <div class="text-center border-b">
-        <h2>RESTAURANTE EXPRESS</h2>
-        <p>Conferência de Mesa</p>
-        <p>${new Date().toLocaleString('pt-BR')}</p>
-      </div>
-      <div class="border-b">
-        <p class="bold text-lg">${currentTable.number === 0 ? 'BAR' : `MESA ${currentTable.number}`}</p>
-        <p>Pedido #${currentOrder.id.slice(0, 8)}</p>
-      </div>
-      <div class="border-b">
-        ${itemsHtml}
-      </div>
-      <div class="flex border-b text-lg bold">
-        <span>TOTAL PARCIAL</span>
-        <span>R$ ${currentOrder.total.toFixed(2)}</span>
-      </div>
-      <div class="text-center">
-        <p>Solicite o fechamento no caixa</p>
-        <p>Obrigado pela preferência!</p>
-      </div>
-    `;
+      const content = `
+        <div class="text-center border-b">
+          <h2 class="text-xl bold">RESTAURANTE EXPRESS</h2>
+          <p>Conferência de Mesa</p>
+          <p>${new Date().toLocaleString('pt-BR')}</p>
+        </div>
+        <div class="border-b">
+          <p class="bold text-lg">${currentTable.number === 0 ? 'BAR' : `MESA ${currentTable.number}`}</p>
+          <p>Pedido #${currentOrder.id.slice(0, 8)}</p>
+        </div>
+        <div class="border-b">
+          <table>
+            ${itemsHtml}
+          </table>
+        </div>
+        <div class="flex border-b text-lg bold">
+          <span>TOTAL PARCIAL</span>
+          <span>R$ ${unpaidTotal.toFixed(2)}</span>
+        </div>
+        <div class="text-center">
+          <p>Solicite o fechamento no caixa</p>
+          <p>Obrigado pela preferência!</p>
+        </div>
+      `;
 
-    const printReq = {
-      pedidoId: currentOrder.id.slice(0, 8),
-      itens: orderItems.map(i => ({
-        nome: i.productName,
-        setor: i.type,
-        quantidade: i.quantity,
-        preco: i.price,
-        observacao: i.notes
-      })),
-      imprimirCaixa: true,
-      tipo: 'preconta',
-      total: currentOrder.total,
-      mesa: currentTable.number === 0 ? 'BAR' : currentTable.number.toString()
-    };
+      const printReq = {
+        pedidoId: currentOrder.id.slice(0, 8),
+        itens: orderItems.map(i => ({
+          nome: i.productName,
+          setor: i.type,
+          quantidade: i.quantity,
+          preco: i.price,
+          observacao: i.notes
+        })),
+        imprimirCaixa: true,
+        tipo: 'preconta',
+        total: unpaidTotal,
+        mesa: currentTable.number === 0 ? 'BAR' : currentTable.number.toString()
+      };
 
-    printOrderWithFallback(printReq, content);
-    toast.success('Imprimindo conferência...');
+      printOrderWithFallback(printReq, content);
+      toast.success('Imprimindo conferência...');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
   };
 
   const requestCheckout = async () => {
-    if (!currentTable || !currentTable.currentOrderId) return;
+    if (!currentTable || !currentTable.currentOrderId || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     try {
       await updateDoc(doc(db, 'tables', currentTable.id), {
         status: 'billing'
@@ -366,6 +395,9 @@ export default function WaiterApp() {
       setSelectedTable(null);
     } catch (error) {
       toast.error('Erro ao solicitar fechamento');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
@@ -462,7 +494,7 @@ export default function WaiterApp() {
           {currentOrder && (
             <div className="mb-4 flex items-center justify-between">
               <span className="text-sm font-bold text-stone-500 uppercase tracking-wider">Total Parcial</span>
-              <span className="text-2xl font-bold font-heading text-stone-900">R$ {currentOrder.total.toFixed(2)}</span>
+              <span className="text-2xl font-bold font-heading text-stone-900">R$ {unpaidTotal.toFixed(2)}</span>
             </div>
           )}
           <div className="grid grid-cols-3 gap-3">
@@ -474,22 +506,36 @@ export default function WaiterApp() {
               <Plus size={20} />
               <span className="text-xs">Adicionar</span>
             </button>
-            <button
-              onClick={handlePrint}
-              disabled={!currentOrder}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-stone-100 py-3 font-bold text-stone-600 hover:bg-stone-200 disabled:opacity-50 transition-all active:scale-95"
-            >
-              <Printer size={20} />
-              <span className="text-xs">Imprimir</span>
-            </button>
-            <button
-              onClick={requestCheckout}
-              disabled={!currentOrder || currentTable?.status === 'billing'}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-stone-900 py-3 font-bold text-white hover:bg-stone-800 disabled:opacity-50 transition-all active:scale-95"
-            >
-              <CheckCircle size={20} />
-              <span className="text-xs">Fechar</span>
-            </button>
+            {isSubmitting ? (
+              <div className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-stone-100 py-3 font-bold text-stone-400">
+                <Clock className="animate-spin" size={20} />
+                <span className="text-xs">Imprimindo...</span>
+              </div>
+            ) : (
+              <button
+                onClick={handlePrint}
+                disabled={!currentOrder}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-stone-100 py-3 font-bold text-stone-600 hover:bg-stone-200 disabled:opacity-50 transition-all active:scale-95"
+              >
+                <Printer size={20} />
+                <span className="text-xs">Imprimir</span>
+              </button>
+            )}
+            {isSubmitting ? (
+              <div className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-stone-100 py-3 font-bold text-stone-400">
+                <Clock className="animate-spin" size={20} />
+                <span className="text-xs">Processando...</span>
+              </div>
+            ) : (
+              <button
+                onClick={requestCheckout}
+                disabled={!currentOrder || currentTable?.status === 'billing'}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-stone-900 py-3 font-bold text-white hover:bg-stone-800 disabled:opacity-50 transition-all active:scale-95"
+              >
+                <CheckCircle size={20} />
+                <span className="text-xs">Fechar</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -601,13 +647,19 @@ export default function WaiterApp() {
             <span className="text-sm font-bold text-stone-500 uppercase tracking-wider">Total</span>
             <span className="text-2xl font-bold font-heading text-stone-900">R$ {total.toFixed(2)}</span>
           </div>
-          <button
-            onClick={sendOrder}
-            disabled={cart.length === 0}
-            className="w-full rounded-2xl bg-orange-600 py-3.5 font-bold text-white hover:bg-orange-700 shadow-md shadow-orange-600/20 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95"
-          >
-            Enviar para Preparo
-          </button>
+          {isSubmitting ? (
+            <div className="w-full rounded-2xl bg-stone-100 py-3.5 font-bold text-stone-400 text-center flex items-center justify-center gap-2">
+              <Clock className="animate-spin" size={20} /> Enviando...
+            </div>
+          ) : (
+            <button
+              onClick={sendOrder}
+              disabled={cart.length === 0}
+              className="w-full rounded-2xl bg-orange-600 py-3.5 font-bold text-white hover:bg-orange-700 shadow-md shadow-orange-600/20 disabled:opacity-50 disabled:shadow-none transition-all active:scale-95"
+            >
+              Enviar para Preparo
+            </button>
+          )}
         </div>
       </div>
     );

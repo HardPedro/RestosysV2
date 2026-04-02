@@ -122,7 +122,8 @@ service cloud.firestore {
       return isAuthenticated() && (
         hasRole('admin') || 
         (request.auth.token.email == "pedrohardsolu2025@gmail.com" && request.auth.token.email_verified == true) ||
-        (request.auth.token.email == "bsr.salvador2022@gmail.com" && request.auth.token.email_verified == true)
+        (request.auth.token.email == "bsr.salvador2022@gmail.com" && request.auth.token.email_verified == true) ||
+        (request.auth.token.email == "harddisk1911@gmail.com" && request.auth.token.email_verified == true)
       );
     }
     
@@ -264,10 +265,10 @@ service cloud.firestore {
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isManager() || isWaiter(); // Waiters need to read users for WaiterLogin.tsx if the tablet is logged in as a waiter
-      allow create: if isAuthenticated() && isValidUser() && (isAdmin() || (isOwner(userId) && request.resource.data.role == 'waiter')); // Default Google users are waiters
-      allow update: if isAuthenticated() && isValidUser() && (isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role));
-      allow delete: if isAdmin();
+      allow read: if isOwner(userId) || isManager() || isWaiter() || (isAuthenticated() && resource.data.email == request.auth.token.email);
+      allow create: if isAuthenticated() && isValidUser() && (isAdmin() || (isManager() && request.resource.data.role == 'waiter') || (isOwner(userId) && request.resource.data.role == 'waiter') || (isOwner(userId) && request.resource.data.email == request.auth.token.email)); 
+      allow update: if isAuthenticated() && isValidUser() && (isAdmin() || (isManager() && request.resource.data.role == 'waiter' && resource.data.role == 'waiter') || (isOwner(userId) && request.resource.data.role == resource.data.role));
+      allow delete: if isAdmin() || (isManager() && resource.data.role == 'waiter') || (isAuthenticated() && resource.data.email == request.auth.token.email && resource.data.uid.matches('^pending_.*'));
     }
 
     match /products/{productId} {

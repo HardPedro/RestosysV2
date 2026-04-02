@@ -61,13 +61,14 @@ export default function PrintJobListener() {
       if (!res.ok) throw new Error(await res.text());
     };
 
-    const formatSectorTicket = (sectorName: string, items: any[], job: any) => {
+    const formatSectorTicket = (sectorName: string, items: any[], job: any, width: number = 32) => {
+      const line = '-'.repeat(width);
       let text = `--- ${sectorName} ---\r\n`;
       text += `Data: ${new Date().toLocaleString('pt-BR')}\r\n`;
       text += `Mesa: ${job.mesa}\r\n`;
       text += `Pedido: #${job.pedidoId}\r\n\r\n`;
       text += `Qtd  Item\r\n`;
-      text += `------------------------------\r\n`;
+      text += `${line}\r\n`;
       items.forEach(item => {
         text += `${item.quantidade}x   ${item.nome}\r\n`;
         if (item.observacao) text += `     OBS: ${item.observacao}\r\n`;
@@ -76,7 +77,8 @@ export default function PrintJobListener() {
       return text;
     };
 
-    const formatReceiptTicket = (job: any) => {
+    const formatReceiptTicket = (job: any, width: number = 32) => {
+      const line = '-'.repeat(width);
       let text = `RESTAURANTE EXPRESS\r\n`;
       text += `${job.tipo === 'preconta' ? 'Conferencia de Mesa' : 'Cupom Nao Fiscal'}\r\n`;
       text += `${new Date().toLocaleString('pt-BR')}\r\n`;
@@ -84,11 +86,19 @@ export default function PrintJobListener() {
       text += `Pedido: #${job.pedidoId}\r\n\r\n`;
       if (job.itens) {
         job.itens.forEach((item: any) => {
-          text += `${item.quantidade}x ${item.nome.padEnd(15).substring(0,15)} R$ ${(item.preco * item.quantidade).toFixed(2)}\r\n`;
+          const price = `R$ ${(item.preco * item.quantidade).toFixed(2)}`;
+          const name = `${item.quantidade}x ${item.nome}`;
+          if (name.length + price.length + 1 <= width) {
+            text += name + ' '.repeat(width - name.length - price.length) + price + '\r\n';
+          } else {
+            text += name + '\r\n';
+            text += ' '.repeat(width - price.length) + price + '\r\n';
+          }
         });
       }
-      text += `------------------------------\r\n`;
-      text += `TOTAL: R$ ${job.total.toFixed(2)}\r\n\r\n`;
+      text += `${line}\r\n`;
+      const totalStr = `TOTAL: R$ ${job.total.toFixed(2)}`;
+      text += ' '.repeat(Math.max(0, width - totalStr.length)) + totalStr + '\r\n\r\n';
       if (job.pagamento) text += `Pagamento: ${job.pagamento}\r\n\r\n`;
       text += `Obrigado pela preferencia!\r\n\r\n\r\n\r\n\r\n\r\n`;
       return text;
@@ -111,18 +121,21 @@ export default function PrintJobListener() {
 
         const kitchenItems = (job.itens || []).filter((i: any) => ['kitchen', 'cozinha', 'food'].includes(i.setor));
         if (kitchenItems.length > 0 && config.cozinha?.printer) {
-          await sendRawPrint(config.cozinha.printer, formatSectorTicket('COZINHA', kitchenItems, job));
+          const width = config.cozinha.largura === 80 ? 42 : 32;
+          await sendRawPrint(config.cozinha.printer, formatSectorTicket('COZINHA', kitchenItems, job, width));
           hasPrintedSomething = true;
         }
 
         const barItems = (job.itens || []).filter((i: any) => ['bar', 'drink'].includes(i.setor));
         if (barItems.length > 0 && config.bar?.printer) {
-          await sendRawPrint(config.bar.printer, formatSectorTicket('BAR', barItems, job));
+          const width = config.bar.largura === 80 ? 42 : 32;
+          await sendRawPrint(config.bar.printer, formatSectorTicket('BAR', barItems, job, width));
           hasPrintedSomething = true;
         }
 
         if (job.imprimirCaixa && config.caixa?.printer) {
-          await sendRawPrint(config.caixa.printer, formatReceiptTicket(job));
+          const width = config.caixa.largura === 80 ? 42 : 32;
+          await sendRawPrint(config.caixa.printer, formatReceiptTicket(job, width));
           hasPrintedSomething = true;
         }
 
@@ -152,7 +165,6 @@ export default function PrintJobListener() {
       // On initial load, we don't want to process everything via snapshot 
       // because processPendingJobs handles the initial batch when agent comes online
       if (isInitialLoad.current) {
-        snapshot.docs.forEach(doc => processedJobs.current.add(doc.id));
         isInitialLoad.current = false;
         return;
       }

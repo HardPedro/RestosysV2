@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { ChefHat, LayoutDashboard, Package, DollarSign, UtensilsCrossed, Wine, Calculator, LogOut, Menu, Users, Settings as SettingsIcon, X } from 'lucide-react';
+import { ChefHat, LayoutDashboard, Package, DollarSign, UtensilsCrossed, Wine, Calculator, LogOut, Menu, Users, Settings as SettingsIcon, X, Shield } from 'lucide-react';
 import { cn } from '../lib/utils';
 import PrintJobListener from './PrintJobListener';
 
@@ -21,6 +21,10 @@ export default function Layout() {
     { name: 'Caixa', path: '/cashier', icon: Calculator, roles: ['admin', 'manager', 'cashier'] },
     { name: 'Configurações', path: '/settings', icon: SettingsIcon, roles: ['admin', 'manager'] },
   ];
+
+  if (userData?.email === 'pedrohardsolu2025@gmail.com') {
+    navItems.push({ name: 'Acessos', path: '/system-users', icon: Shield, roles: ['admin'] });
+  }
 
   const filteredNav = navItems.filter(item => item.roles.includes(userData?.role || ''));
 

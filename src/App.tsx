@@ -14,6 +14,7 @@ import Dashboard from './pages/admin/Dashboard';
 import Inventory from './pages/admin/Inventory';
 import Finance from './pages/admin/Finance';
 import Waiters from './pages/admin/Waiters';
+import SystemUsers from './pages/admin/SystemUsers';
 import Settings from './pages/admin/Settings';
 import WaiterApp from './pages/waiter/WaiterApp';
 import WaiterLogin from './pages/waiter/WaiterLogin';
@@ -63,6 +64,7 @@ function AppRoutes() {
         <Route path="dashboard" element={<ProtectedRoute allowedRoles={['manager']}><Dashboard /></ProtectedRoute>} />
         <Route path="inventory" element={<ProtectedRoute allowedRoles={['manager']}><Inventory /></ProtectedRoute>} />
         <Route path="waiters" element={<ProtectedRoute allowedRoles={['manager']}><Waiters /></ProtectedRoute>} />
+        <Route path="system-users" element={<ProtectedRoute allowedRoles={['admin']}><SystemUsers /></ProtectedRoute>} />
         <Route path="finance" element={<ProtectedRoute allowedRoles={['manager', 'cashier']}><Finance /></ProtectedRoute>} />
         <Route path="settings" element={<ProtectedRoute allowedRoles={['manager']}><Settings /></ProtectedRoute>} />
         

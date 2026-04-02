@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, doc, updateDoc, addDoc, query, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { Calculator, CheckCircle, Printer } from 'lucide-react';
+import { Calculator, CheckCircle, Printer, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import { printReceipt } from '../../lib/print';
 
@@ -14,6 +14,9 @@ export default function Cashier() {
   const [autoPrint, setAutoPrint] = useState(true);
 
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
     const unsubTables = onSnapshot(collection(db, 'tables'), (snapshot) => {
@@ -55,76 +58,93 @@ export default function Cashier() {
     .filter(item => selectedItems.includes(item.id))
     .reduce((acc, item) => acc + (item.price * item.quantity), 0);
 
+  const unpaidTotal = orderItems
+    .filter(item => item.status !== 'paid' && item.status !== 'cancelled')
+    .reduce((acc, item) => acc + (item.price * item.quantity), 0);
+
   const handlePrint = (isPreBill = false, itemsToPrint = orderItems) => {
-    if (!currentOrder || !currentTable) return;
+    if (!currentOrder || !currentTable || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     
-    const itemsHtml = itemsToPrint.map(item => `
-      <div class="flex mb-2">
-        <span>${item.quantity}x ${item.productName}</span>
-        <span>R$ ${(item.price * item.quantity).toFixed(2)}</span>
-      </div>
-    `).join('');
+    try {
+      const itemsHtml = itemsToPrint.map(item => `
+        <tr>
+          <td class="qty">${item.quantity}x</td>
+          <td>${item.productName}</td>
+          <td class="price">R$ ${(item.price * item.quantity).toFixed(2)}</td>
+        </tr>
+      `).join('');
 
-    const paymentMethodNames: Record<string, string> = {
-      credit: 'Crédito',
-      debit: 'Débito',
-      pix: 'Pix',
-      cash: 'Dinheiro'
-    };
+      const paymentMethodNames: Record<string, string> = {
+        credit: 'Crédito',
+        debit: 'Débito',
+        pix: 'Pix',
+        cash: 'Dinheiro'
+      };
 
-    const total = itemsToPrint.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+      const total = itemsToPrint.reduce((acc, item) => acc + (item.price * item.quantity), 0);
 
-    const content = `
-      <div class="text-center border-b">
-        <h2>RESTAURANTE EXPRESS</h2>
-        <p>${isPreBill ? 'Conferência de Mesa' : 'Cupom Não Fiscal'}</p>
-        <p>${new Date().toLocaleString('pt-BR')}</p>
-      </div>
-      <div class="border-b">
-        <p class="bold text-lg">${currentTable.number === 0 ? 'BAR' : `MESA ${currentTable.number}`}</p>
-        <p>Pedido #${currentOrder.id.slice(0, 8)}</p>
-      </div>
-      <div class="border-b">
-        ${itemsHtml}
-      </div>
-      <div class="flex border-b text-lg bold">
-        <span>TOTAL</span>
-        <span>R$ ${total.toFixed(2)}</span>
-      </div>
-      <div class="text-center">
-        ${!isPreBill ? `<p>Pagamento: ${paymentMethodNames[paymentMethod] || paymentMethod}</p>` : '<p>Aguardando Pagamento</p>'}
-        <p>Obrigado pela preferência!</p>
-      </div>
-    `;
+      const content = `
+        <div class="text-center border-b">
+          <h2 class="text-xl bold">RESTAURANTE EXPRESS</h2>
+          <p>${isPreBill ? 'Conferência de Mesa' : 'Cupom Não Fiscal'}</p>
+          <p>${new Date().toLocaleString('pt-BR')}</p>
+        </div>
+        <div class="border-b">
+          <p class="bold text-lg">${currentTable.number === 0 ? 'BAR' : `MESA ${currentTable.number}`}</p>
+          <p>Pedido #${currentOrder.id.slice(0, 8)}</p>
+        </div>
+        <div class="border-b">
+          <table>
+            ${itemsHtml}
+          </table>
+        </div>
+        <div class="flex border-b text-lg bold">
+          <span>TOTAL</span>
+          <span>R$ ${total.toFixed(2)}</span>
+        </div>
+        <div class="text-center">
+          ${!isPreBill ? `<p>Pagamento: ${paymentMethodNames[paymentMethod] || paymentMethod}</p>` : '<p>Aguardando Pagamento</p>'}
+          <p>Obrigado pela preferência!</p>
+        </div>
+      `;
 
-    const printReq = {
-      pedidoId: currentOrder.id.slice(0, 8),
-      itens: itemsToPrint.map(i => ({
-        nome: i.productName,
-        setor: i.type,
-        quantidade: i.quantity,
-        preco: i.price,
-        observacao: i.notes
-      })),
-      imprimirCaixa: true,
-      tipo: isPreBill ? 'preconta' : 'cupom',
-      total: total,
-      pagamento: !isPreBill ? (paymentMethodNames[paymentMethod] || paymentMethod) : undefined,
-      mesa: currentTable.number === 0 ? 'BAR' : currentTable.number.toString()
-    };
+      const printReq = {
+        pedidoId: currentOrder.id.slice(0, 8),
+        itens: itemsToPrint.map(i => ({
+          nome: i.productName,
+          setor: i.type,
+          quantidade: i.quantity,
+          preco: i.price,
+          observacao: i.notes
+        })),
+        imprimirCaixa: true,
+        tipo: isPreBill ? 'preconta' : 'cupom',
+        total: total,
+        pagamento: !isPreBill ? (paymentMethodNames[paymentMethod] || paymentMethod) : undefined,
+        mesa: currentTable.number === 0 ? 'BAR' : currentTable.number.toString()
+      };
 
-    // Send to printJobs so the PC can print it automatically via the local agent
-    addDoc(collection(db, 'printJobs'), {
-      ...printReq,
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    }).catch(err => console.error('Failed to create print job', err));
+      // Send to printJobs so the PC can print it automatically via the local agent
+      addDoc(collection(db, 'printJobs'), {
+        ...printReq,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      }).catch(err => console.error('Failed to create print job', err));
 
-    toast.success(isPreBill ? 'Enviando para impressão...' : 'Enviando comprovante...');
+      toast.success(isPreBill ? 'Enviando para impressão...' : 'Enviando comprovante...');
+    } finally {
+      // Re-enable after a short delay since print is fast
+      setTimeout(() => {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+      }, 500);
+    }
   };
 
   const handleCloseOrder = async () => {
-    if (!currentTable || !currentOrder) return;
+    if (!currentTable || !currentOrder || isSubmittingRef.current) return;
     
     const itemsToPay = selectedItems.length > 0 
       ? orderItems.filter(item => selectedItems.includes(item.id))
@@ -135,6 +155,8 @@ export default function Cashier() {
       return;
     }
 
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     const totalToPay = itemsToPay.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const isPartial = itemsToPay.length < orderItems.length;
 
@@ -183,9 +205,10 @@ export default function Cashier() {
         setSelectedTable(null);
       } else {
         // Partial checkout
-        const newTotal = remainingItems.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+        // DO NOT overwrite total. Just add paidAmount to keep history.
+        const currentPaid = currentOrder.paidAmount || 0;
         await updateDoc(doc(db, 'orders', currentOrder.id), {
-          total: newTotal
+          paidAmount: currentPaid + totalToPay
         });
         toast.success('Pagamento parcial registrado!');
         setSelectedItems([]);
@@ -194,11 +217,16 @@ export default function Cashier() {
     } catch (error) {
       console.error(error);
       toast.error('Erro ao processar pagamento');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
   const handleReopenTable = async () => {
-    if (!currentTable) return;
+    if (!currentTable || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     try {
       await updateDoc(doc(db, 'tables', currentTable.id), {
         status: 'occupied'
@@ -206,12 +234,17 @@ export default function Cashier() {
       toast.success('Mesa reaberta para novos pedidos');
     } catch (error) {
       toast.error('Erro ao reabrir mesa');
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
   const handleFreeTable = async () => {
-    if (!currentTable || !currentOrder) return;
-    if (confirm('Deseja realmente liberar a mesa sem pagamento? (Os itens serão mantidos no pedido como não pagos)')) {
+    if (!currentTable || !currentOrder || isSubmittingRef.current) return;
+    if (confirm('Deseja realmente liberar a mesa sem pagamento? (Os itens serão cancelados)')) {
+      isSubmittingRef.current = true;
+      setIsSubmitting(true);
       try {
         await updateDoc(doc(db, 'tables', currentTable.id), {
           status: 'free',
@@ -221,10 +254,24 @@ export default function Cashier() {
           status: 'cancelled',
           cancelledAt: new Date().toISOString()
         });
-        toast.success('Mesa liberada');
+        
+        // Cancel all items to prevent ghost items in kitchen/bar
+        for (const item of orderItems) {
+          if (item.status !== 'paid' && item.status !== 'cancelled') {
+            await updateDoc(doc(db, 'orderItems', item.id), {
+              status: 'cancelled',
+              cancelledAt: new Date().toISOString()
+            });
+          }
+        }
+        
+        toast.success('Mesa liberada e itens cancelados');
         setSelectedTable(null);
       } catch (error) {
         toast.error('Erro ao liberar mesa');
+      } finally {
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
       }
     }
   };
@@ -276,20 +323,28 @@ export default function Cashier() {
                 ← Voltar
               </button>
               <div className="flex gap-3 ml-auto">
-                {currentTable.status === 'billing' && (
-                  <button 
-                    onClick={handleReopenTable}
-                    className="rounded-xl bg-blue-50 px-4 py-2 text-sm font-bold text-blue-600 hover:bg-blue-100 border border-blue-200 transition-colors"
-                  >
-                    Reabrir Mesa
-                  </button>
+                {isSubmitting ? (
+                  <div className="rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-400 border border-stone-200 flex items-center gap-2">
+                    <Clock className="animate-spin" size={16} /> Processando...
+                  </div>
+                ) : (
+                  <>
+                    {currentTable.status === 'billing' && (
+                      <button 
+                        onClick={handleReopenTable}
+                        className="rounded-xl bg-blue-50 px-4 py-2 text-sm font-bold text-blue-600 hover:bg-blue-100 border border-blue-200 transition-colors"
+                      >
+                        Reabrir Mesa
+                      </button>
+                    )}
+                    <button 
+                      onClick={handleFreeTable}
+                      className="rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-600 hover:bg-stone-200 border border-stone-200 transition-colors"
+                    >
+                      Liberar Mesa
+                    </button>
+                  </>
                 )}
-                <button 
-                  onClick={handleFreeTable}
-                  className="rounded-xl bg-stone-100 px-4 py-2 text-sm font-bold text-stone-600 hover:bg-stone-200 border border-stone-200 transition-colors"
-                >
-                  Liberar Mesa
-                </button>
               </div>
             </div>
             <div className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between border-b border-stone-100 pb-8">
@@ -299,9 +354,9 @@ export default function Cashier() {
               </div>
               <div className="sm:text-right bg-stone-50 p-4 rounded-2xl border border-stone-100">
                 <p className="text-xs md:text-sm font-bold text-stone-500 uppercase tracking-wider mb-1">Total {selectedItems.length > 0 ? 'Selecionado' : 'da Mesa'}</p>
-                <p className="text-4xl md:text-5xl font-bold font-heading text-orange-600">R$ {(selectedItems.length > 0 ? selectedTotal : currentOrder.total).toFixed(2)}</p>
+                <p className="text-4xl md:text-5xl font-bold font-heading text-orange-600">R$ {(selectedItems.length > 0 ? selectedTotal : unpaidTotal).toFixed(2)}</p>
                 {selectedItems.length > 0 && (
-                  <p className="text-sm font-medium text-stone-400 mt-2">Total Mesa: R$ {currentOrder.total.toFixed(2)}</p>
+                  <p className="text-sm font-medium text-stone-400 mt-2">Total Restante: R$ {unpaidTotal.toFixed(2)}</p>
                 )}
               </div>
             </div>
@@ -370,18 +425,30 @@ export default function Cashier() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t border-stone-100">
-              <button
-                onClick={() => handlePrint(true)}
-                className="flex flex-1 items-center justify-center gap-3 rounded-2xl border-2 border-stone-200 bg-white py-4 font-bold text-stone-700 hover:bg-stone-50 hover:border-stone-300 transition-all active:scale-95"
-              >
-                <Printer size={22} /> Pré-conta
-              </button>
-              <button
-                onClick={handleCloseOrder}
-                className="flex flex-1 items-center justify-center gap-3 rounded-2xl bg-orange-600 py-4 font-bold text-white hover:bg-orange-700 shadow-lg shadow-orange-600/20 transition-all active:scale-95"
-              >
-                <CheckCircle size={22} /> {selectedItems.length > 0 && selectedItems.length < orderItems.length ? 'Pagar Selecionados' : 'Finalizar Pagamento'}
-              </button>
+              {isSubmitting ? (
+                <div className="flex flex-1 items-center justify-center gap-3 rounded-2xl bg-stone-100 py-4 font-bold text-stone-400">
+                  <Printer className="animate-spin" size={22} /> Imprimindo...
+                </div>
+              ) : (
+                <button
+                  onClick={() => handlePrint(true)}
+                  className="flex flex-1 items-center justify-center gap-3 rounded-2xl border-2 border-stone-200 bg-white py-4 font-bold text-stone-700 hover:bg-stone-50 hover:border-stone-300 transition-all active:scale-95"
+                >
+                  <Printer size={22} /> Pré-conta
+                </button>
+              )}
+              {isSubmitting ? (
+                <div className="flex flex-1 items-center justify-center gap-3 rounded-2xl bg-stone-100 py-4 font-bold text-stone-400">
+                  <CheckCircle className="animate-spin" size={22} /> Processando...
+                </div>
+              ) : (
+                <button
+                  onClick={handleCloseOrder}
+                  className="flex flex-1 items-center justify-center gap-3 rounded-2xl bg-orange-600 py-4 font-bold text-white hover:bg-orange-700 shadow-lg shadow-orange-600/20 transition-all active:scale-95"
+                >
+                  <CheckCircle size={22} /> {selectedItems.length > 0 && selectedItems.length < orderItems.length ? 'Pagar Selecionados' : 'Finalizar Pagamento'}
+                </button>
+              )}
             </div>
           </div>
         ) : (
