@@ -430,9 +430,9 @@ export default function Settings() {
                 <div className="bg-white/50 rounded-xl p-4 mb-4 border border-orange-200/50">
                   <p className="text-xs font-bold text-orange-900 uppercase tracking-wider mb-2">Como Corrigir:</p>
                   <ol className="list-decimal ml-4 space-y-1 text-sm text-orange-800">
-                    <li>Baixe os dois arquivos abaixo (Agente e Iniciador) e coloque-os na mesma pasta.</li>
-                    <li>Certifique-se de ter o <a href="https://nodejs.org/" target="_blank" rel="noreferrer" className="underline font-bold">Node.js instalado</a> no seu computador.</li>
-                    <li>Dê um duplo clique no arquivo <strong>iniciar-impressora.bat</strong> (uma janela preta deve abrir).</li>
+                    <li>Baixe o arquivo do Agente abaixo.</li>
+                    <li><strong>Não precisa instalar nada!</strong> Dê um duplo clique no arquivo <strong>print-agent.bat</strong> (uma janela preta deve abrir).</li>
+                    <li>Se o Windows Defender avisar sobre o arquivo, clique em "Mais informações" e depois em "Executar assim mesmo".</li>
                     <li>Se o navegador bloquear a conexão, clique no botão "Abrir URL do Agente" abaixo e permita o acesso.</li>
                     <li>Recarregue esta página.</li>
                   </ol>
@@ -452,18 +452,11 @@ export default function Settings() {
                     Abrir URL do Agente (Autorizar)
                   </button>
                   <a 
-                    href="/print-agent.js" 
+                    href="/print-agent.bat" 
                     download
                     className="flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-orange-600 border border-orange-200 hover:bg-orange-50 transition-all active:scale-95"
                   >
-                    <Download size={18} /> Baixar Agente (.js)
-                  </a>
-                  <a 
-                    href="/iniciar-impressora.bat" 
-                    download
-                    className="flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-bold text-orange-600 border border-orange-200 hover:bg-orange-50 transition-all active:scale-95"
-                  >
-                    <Download size={18} /> Baixar Iniciador (.bat)
+                    <Download size={18} /> Baixar Agente (.bat)
                   </a>
                 </div>
               </div>
