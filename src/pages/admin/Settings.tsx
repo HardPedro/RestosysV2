@@ -121,18 +121,7 @@ export default function Settings() {
         updatedAt: new Date().toISOString()
       });
 
-      // 2. Send to Agent
-      const res = await fetch(`${agentUrl}/config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(localConfig)
-      });
-      
-      if (res.ok) {
-        toast.success('Configuração salva no Banco de Dados e enviada para o agente!');
-      } else {
-        toast.error('Salvo no Banco de Dados, mas o agente local retornou erro.');
-      }
+      toast.success('Configuração salva no Banco de Dados!');
     } catch (e) {
       console.error('Save error:', e);
       toast.error('Erro ao salvar. Verifique sua conexão.');
